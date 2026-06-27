@@ -1,0 +1,9 @@
+backend/.venv/
+backend/_pycache_/
+backend/work
+
+frontend/node_modules/
+frontend/dist
+
+.DS_STORE
+Thumbs.db
