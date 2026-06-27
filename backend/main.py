@@ -68,36 +68,44 @@ def _run_local_separation(input_path: Path, mode: str, studio_four_stem: bool) -
     track_dir = OUTPUTS_DIR / input_path.stem
     track_dir.mkdir(parents=True, exist_ok=True)
 
-    audio, sr = sf.read(str(input_path), always_2d=True)
+    
+    try:
+        audio_mono, sr= librosa.load(str(input_path), sr=None, mono=False)
+    except Exception as e:
+        raise RuntimeError(f"Failed to load audio file: {str(e)}")
+    if audio_mono.ndim==1:
+        audio=np.stack([audio_mono, audio_mono], axis=1)
+    else:
+        audio=audio_mono.T if audio_mono.shape[0]<=2 else audio_mono
     audio = _ensure_stereo(audio)
 
-    left = audio[:, 0]
-    right = audio[:, 1]
-    mid = (left + right) * 0.5
-    side = (left - right) * 0.5
+    mono=np.mean(audio, axis=1)
 
     # Quick karaoke approximation: remove center content where vocals often dominate
-    instrumental_mono = side
-    instrumental = np.stack([instrumental_mono, -instrumental_mono], axis=1)
+    harmonic, percussive=librosa.effects.hpss(mono)
 
     if mode == "quick":
+        instrumental_mono=percussive *0.85+ harmonic*0.15
+        instrumental= np.stack([instrumental_mono, instrumental_mono], axis=1)
         _write_stem(track_dir, "accompaniment.wav", instrumental, sr)
         return
+    # Studio Mode
+    percussive_stereo=np.stack([percussive, percussive], axis=1)
+    harmonic_stereo= np.stack([harmonic, harmonic], axis=1)
 
     if not studio_four_stem:
-        vocals = np.stack([mid, mid], axis=1)
+        vocals=harmonic_stereo
+        accompaniment= percussive_stereo* 0.9 + harmonic_stereo*0.1
         _write_stem(track_dir, "vocals.wav", vocals, sr)
-        _write_stem(track_dir, "accompaniment.wav", instrumental, sr)
+        _write_stem(track_dir, "accompaniment.wav", accompaniment, sr)
         return
 
-    # Studio approximation from open-source DSP building blocks
-    mono = np.mean(audio, axis=1)
-    harmonic, percussive = librosa.effects.hpss(mono)
-    drums = np.stack([percussive, percussive], axis=1)
-    harmonic_stereo = np.stack([harmonic, harmonic], axis=1)
+    
     bass = _lowpass(harmonic_stereo, sr, cutoff_hz=220.0)
-    vocals = _highpass(np.stack([mid, mid], axis=1), sr, cutoff_hz=150.0)
-    other = audio - drums - bass - vocals
+    vocals = _highpass(harmonic_stereo, sr, cutoff_hz=150.0)
+    drums=percussive_stereo
+
+    other = audio - vocals- drums - bass 
 
     _write_stem(track_dir, "vocals.wav", vocals, sr)
     _write_stem(track_dir, "drums.wav", drums, sr)
