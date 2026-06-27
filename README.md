@@ -34,3 +34,10 @@ python -m venv .venv
 .venv\Scripts\activate
 pip install -r requirements.txt
 uvicorn main:app --reload --host 127.0.0.1 --port 8000
+```
+## Frontend Setup
+```bash
+cd frontend
+npm install
+npm run dev
+```
